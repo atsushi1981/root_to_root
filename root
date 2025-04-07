@@ -1,0 +1,659 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from PIL import Image, ImageTk, ImageGrab, ImageDraw, ImageFont
+import numpy as np
+from openpyxl import Workbook, load_workbook
+from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as XLImage
+
+
+import re
+import io
+
+class PointEditDialog:
+    def __init__(self, parent, point_name, x, y):
+        self.dialog = tk.Toplevel(parent.root)
+        self.dialog.title("ポイント名称編集")
+        self.dialog.geometry("400x150")
+        self.dialog.transient(parent.root)
+        self.dialog.grab_set()
+        
+        self.parent = parent
+        self.result = None
+        
+        # 座標情報の表示
+        coord_frame = ttk.Frame(self.dialog)
+        coord_frame.pack(pady=10)
+        ttk.Label(coord_frame, text=f"座標: ({x}, {y})").pack()
+        
+        # 名称入力フィールド
+        input_frame = ttk.Frame(self.dialog)
+        input_frame.pack(pady=10)
+        ttk.Label(input_frame, text="ポイント名称:").pack(side=tk.LEFT)
+        #入力名称の入力欄の幅を調整する
+        self.name_entry = ttk.Entry(input_frame, width=50)
+        self.name_entry.pack(side=tk.LEFT, padx=5)
+        self.name_entry.insert(0, point_name)
+        
+        # ボタン
+        button_frame = ttk.Frame(self.dialog)
+        button_frame.pack(pady=10)
+        ttk.Button(button_frame, text="保存", command=self.save).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="キャンセル", command=self.cancel).pack(side=tk.LEFT, padx=5)
+        
+        self.name_entry.focus_set()
+        self.name_entry.select_range(0, tk.END)
+        
+    def save(self):
+        self.result = self.name_entry.get()
+        self.dialog.destroy()
+        
+    def cancel(self):
+        self.dialog.destroy()
+
+class RouteGenerator:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("ルート生成アプリ")
+        
+        # 画面サイズの計算
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        window_width = int(screen_width * 0.8)
+        window_height = int(screen_height * 0.8)
+        
+        # 画面を中央に配置
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        
+        # メイン画面の設定
+        self.main_frame = ttk.Frame(self.root)
+        self.main_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+        
+        # 右側のメインフレーム（4割）
+        right_width = int(window_width * 0.4)
+        self.right_frame = ttk.Frame(self.main_frame, width=right_width)
+        self.right_frame.pack(side=tk.RIGHT, padx=(10, 0), fill=tk.BOTH)
+        
+        # 右上：ルートポイント欄
+        route_point_frame = ttk.LabelFrame(self.right_frame, text="ルートポイント")
+        route_point_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        # ルートポイントリストボックスとスクロールバー
+        list_frame = ttk.Frame(route_point_frame)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # 水平スクロールバー用のフレーム
+        listbox_frame = ttk.Frame(list_frame)
+        listbox_frame.pack(fill=tk.BOTH, expand=True)
+        
+        self.route_point_listbox = tk.Listbox(listbox_frame, width=50, height=15, font=("Arial", 11), xscrollcommand=True)
+        
+        # 垂直スクロールバー
+        v_scrollbar = ttk.Scrollbar(listbox_frame, orient="vertical", command=self.route_point_listbox.yview)
+        self.route_point_listbox.configure(yscrollcommand=v_scrollbar.set)
+        
+        # 水平スクロールバー
+        h_scrollbar = ttk.Scrollbar(list_frame, orient="horizontal", command=self.route_point_listbox.xview)
+        self.route_point_listbox.configure(xscrollcommand=h_scrollbar.set)
+        
+        # リストボックスとスクロールバーの配置
+        self.route_point_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scrollbar.pack(fill=tk.X)
+        
+        # リストボックスのダブルクリックイベントをバインド
+        self.route_point_listbox.bind("<Double-Button-1>", self.edit_point_name)
+        
+        # 右下：操作パネル
+        control_frame = ttk.LabelFrame(self.right_frame, text="操作パネル")
+        control_frame.pack(fill=tk.BOTH, padx=0, pady=(0, 5))
+        
+        # ポイント編集ボタン
+        point_edit_frame = ttk.Frame(control_frame)
+        point_edit_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(point_edit_frame, text="ポイント編集").pack()
+        
+        edit_buttons_frame = ttk.Frame(point_edit_frame)
+        edit_buttons_frame.pack(pady=5)
+        
+        ttk.Button(edit_buttons_frame, text="↑", width=4, command=self.move_point_up).pack(side=tk.LEFT, padx=2)
+        ttk.Button(edit_buttons_frame, text="↓", width=4, command=self.move_point_down).pack(side=tk.LEFT, padx=2)
+        ttk.Button(edit_buttons_frame, text="削除", width=8, command=self.delete_point).pack(side=tk.LEFT, padx=2)
+        ttk.Button(edit_buttons_frame, text="編集", width=8, command=self.edit_selected_point).pack(side=tk.LEFT, padx=2)
+        
+        # 区切り線
+        ttk.Separator(control_frame, orient="horizontal").pack(fill=tk.X, padx=5, pady=5)
+        
+        # ファイル操作ボタン
+        file_frame = ttk.Frame(control_frame)
+        file_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(file_frame, text="ファイル操作").pack()
+        
+        file_buttons_frame = ttk.Frame(file_frame)
+        file_buttons_frame.pack(pady=5)
+        
+        ttk.Button(file_buttons_frame, text="画像選択", width=12, command=self.load_image).pack(side=tk.LEFT, padx=2)
+        ttk.Button(file_buttons_frame, text="画像出力", width=12, command=self.save_image).pack(side=tk.LEFT, padx=2)
+        ttk.Button(file_buttons_frame, text="Excel出力", width=12, command=self.export_to_excel).pack(side=tk.LEFT, padx=2)
+        ttk.Button(file_buttons_frame, text="Excelインポート", width=12, command=self.import_from_excel).pack(side=tk.LEFT, padx=2)
+        
+        # 区切り線
+        ttk.Separator(control_frame, orient="horizontal").pack(fill=tk.X, padx=5, pady=5)
+        
+        # ルート初期化ボタン
+        route_init_frame = ttk.Frame(control_frame)
+        route_init_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(route_init_frame, text="ルート操作").pack()
+        
+        init_buttons_frame = ttk.Frame(route_init_frame)
+        init_buttons_frame.pack(pady=5)
+        
+        ttk.Button(init_buttons_frame, text="ルート初期化", width=20, command=self.initialize_route).pack(padx=2)
+        
+        # 左側のフレーム（画像表示用）
+        self.left_frame = ttk.Frame(self.main_frame)
+        self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        # 画像表示用キャンバス
+        canvas_width = window_width - right_width - 40  # 右側の幅とパディングを考慮
+        canvas_height = window_height - 40  # パディングを考慮
+        self.canvas = tk.Canvas(self.left_frame, width=canvas_width, height=canvas_height, bg='#f0f0f0')
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # データの初期化
+        self.waypoints = []  # [(x, y, name), ...]
+        self.waypoint_markers = []  # キャンバス上のマーカーID
+        self.waypoint_numbers = []  # キャンバス上の番号ID
+        self.waypoint_lines = []    # キャンバス上の線ID
+        self.image = None
+        self.photo = None
+        self.canvas_width = canvas_width
+        self.canvas_height = canvas_height
+        
+        # キャンバスのクリックイベントをバインド
+        self.canvas.bind("<Button-1>", self.add_waypoint_direct)
+
+    def get_next_point_number(self):
+        return len(self.waypoints) + 1
+
+    def start_resize(self, event):
+        self.start_x = event.x
+        self.start_width = self.right_frame.winfo_width()
+        
+    def resize_right_frame(self, event):
+        delta_x = self.start_x - event.x
+        new_width = self.start_width + delta_x
+        if new_width > 150:  # 最小幅を設定
+            self.right_frame.configure(width=new_width)
+            self.right_frame_width = new_width
+
+    def add_waypoint_direct(self, event):
+        """クリックした位置に直接ポイントを追加"""
+        if not self.image:
+            return
+            
+        x, y = event.x, event.y
+        name = f"ポイント{len(self.waypoints)+1}"
+        self.add_route_point(x, y, name)
+
+    def add_route_point(self, x, y, name):
+        # 新しい通過点を追加
+        self.waypoints.append((x, y, name))
+        
+        # キャンバス上の表示を更新
+        self.update_canvas_display()
+        
+        # リストボックスを更新
+        self.update_listbox()
+        
+        # 自動的にルートを生成
+        self.generate_route()
+
+    def update_canvas_display(self):
+        # 既存のマーカー、番号、線を削除
+        for marker in self.waypoint_markers:
+            self.canvas.delete(marker)
+        for number in self.waypoint_numbers:
+            self.canvas.delete(number)
+        for line in self.waypoint_lines:
+            self.canvas.delete(line)
+            
+        self.waypoint_markers = []
+        self.waypoint_numbers = []
+        self.waypoint_lines = []
+        
+        # マーカーと番号を描画
+        for i, (x, y, _) in enumerate(self.waypoints, 1):
+            marker = self.canvas.create_oval(x-5, y-5, x+5, y+5, fill="red")
+            number = self.canvas.create_text(x, y-15, text=str(i), fill="blue", font=("Arial", 12, "bold"))
+            self.waypoint_markers.append(marker)
+            self.waypoint_numbers.append(number)
+        
+        # ルートを描画（2点以上あれば）
+        if len(self.waypoints) >= 2:
+            for i in range(len(self.waypoints)-1):
+                x1, y1, _ = self.waypoints[i]
+                x2, y2, _ = self.waypoints[i+1]
+                line = self.canvas.create_line(x1, y1, x2, y2, fill="blue", width=2)
+                self.waypoint_lines.append(line)
+
+    def update_listbox(self):
+        self.route_point_listbox.delete(0, tk.END)
+        for i, (x, y, name) in enumerate(self.waypoints, 1):
+            # 座標を先に表示し、その後に名称を表示
+            display_text = f"{i}. ({x}, {y}) {name}"
+            self.route_point_listbox.insert(tk.END, display_text)
+
+    def move_point_up(self):
+        selected = self.route_point_listbox.curselection()
+        if not selected or selected[0] == 0:
+            return
+            
+        idx = selected[0]
+        self.waypoints[idx], self.waypoints[idx-1] = self.waypoints[idx-1], self.waypoints[idx]
+        self.update_canvas_display()
+        self.update_listbox()
+        self.route_point_listbox.selection_set(idx-1)
+
+    def move_point_down(self):
+        selected = self.route_point_listbox.curselection()
+        if not selected or selected[0] == len(self.waypoints) - 1:
+            return
+            
+        idx = selected[0]
+        self.waypoints[idx], self.waypoints[idx+1] = self.waypoints[idx+1], self.waypoints[idx]
+        self.update_canvas_display()
+        self.update_listbox()
+        self.route_point_listbox.selection_set(idx+1)
+
+    def delete_point(self):
+        selected = self.route_point_listbox.curselection()
+        if not selected:
+            return
+            
+        idx = selected[0]
+        del self.waypoints[idx]
+        self.update_canvas_display()
+        self.update_listbox()
+
+    def load_image(self):
+        filename = filedialog.askopenfilename(
+            parent=self.root,
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp")]
+        )
+        if filename:
+            # 画像を読み込み
+            self.image = Image.open(filename)
+            
+            # キャンバスのサイズを取得
+            canvas_width = self.canvas_width
+            canvas_height = self.canvas_height
+            
+            # 画像のアスペクト比を維持しながらリサイズ
+            img_width, img_height = self.image.size
+            width_ratio = canvas_width / img_width
+            height_ratio = canvas_height / img_height
+            ratio = min(width_ratio, height_ratio) * 0.95  # 余白を確保するため95%に
+            
+            new_width = int(img_width * ratio)
+            new_height = int(img_height * ratio)
+            
+            # 画像をリサイズ
+            self.image = self.image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            self.photo = ImageTk.PhotoImage(self.image)
+            
+            # キャンバスの中央に画像を配置
+            x = (canvas_width - new_width) // 2
+            y = (canvas_height - new_height) // 2
+            
+            # キャンバスをクリアして画像を表示
+            self.canvas.delete("all")
+            self.canvas.create_image(x, y, image=self.photo, anchor="nw")
+            
+            # 既存のポイントとルートを再描画
+            self.update_canvas_display()
+
+    def save_image(self):
+        if not self.image:
+            messagebox.showwarning("警告", "画像が読み込まれていません")
+            return
+            
+        filename = filedialog.asksaveasfilename(
+            parent=self.root,
+            defaultextension=".png",
+            filetypes=[("PNG files", "*.png"), 
+                      ("JPEG files", "*.jpg"),
+                      ("All files", "*.*")]
+        )
+        
+        if filename:
+            x = self.canvas.winfo_rootx()
+            y = self.canvas.winfo_rooty()
+            width = self.canvas.winfo_width()
+            height = self.canvas.winfo_height()
+            
+            screenshot = ImageGrab.grab(bbox=(x, y, x+width, y+height))
+            screenshot.save(filename)
+            messagebox.showinfo("完了", "画像を保存しました")
+
+    def edit_point_name(self, event=None):
+        """選択されたポイントの名称を編集"""
+        self.edit_selected_point()
+
+    def edit_selected_point(self):
+        """選択されたポイントの名称を編集するダイアログを表示"""
+        selected = self.route_point_listbox.curselection()
+        if not selected:
+            return
+            
+        idx = selected[0]
+        x, y, current_name = self.waypoints[idx]
+        
+        dialog = PointEditDialog(self, current_name, x, y)
+        self.root.wait_window(dialog.dialog)
+        
+        if dialog.result:
+            self.waypoints[idx] = (x, y, dialog.result)
+            self.update_listbox()
+            self.route_point_listbox.selection_set(idx)
+
+    def initialize_route(self):
+        """ルートを初期化する"""
+        if self.waypoints:
+            if messagebox.askyesno("確認", "ルートを初期化します。よろしいですか？"):
+                self.waypoints = []
+                self.update_canvas_display()
+                self.update_listbox()
+                if self.image:
+                    # 画像が読み込まれている場合は、画像のみを再表示
+                    self.canvas.delete("all")
+                    x = (self.canvas_width - self.image.width) // 2
+                    y = (self.canvas_height - self.image.height) // 2
+                    self.canvas.create_image(x, y, image=self.photo, anchor="nw")
+
+    def import_from_excel(self):
+        """エクセルファイルからルートポイント情報をインポート"""
+        filename = filedialog.askopenfilename(
+            parent=self.root,
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+        )
+        
+        if not filename:
+            return
+
+        try:
+            # エクセルファイルを読み込む
+            wb = load_workbook(filename)
+            ws = wb.active
+
+            # 既存のルートを初期化
+            self.waypoints = []
+
+            # 座標データを解析して取り込む
+            for row in range(2, ws.max_row + 1):
+                coord_cell = ws[f'A{row}'].value
+                name_cell = ws[f'B{row}'].value
+
+                if coord_cell:
+                    try:
+                        # 座標文字列から数値を抽出 (例: "(100, 200)" -> [100, 200])
+                        coords = re.findall(r'-?\d+', str(coord_cell))
+                        if len(coords) >= 2:
+                            x, y = int(coords[0]), int(coords[1])
+                            name = str(name_cell) if name_cell else f"ポイント{row-1}"
+                            self.waypoints.append((x, y, name))
+                    except ValueError as ve:
+                        print(f"警告: 行 {row} の座標データの解析に失敗しました: {ve}")
+                        continue
+
+            # 画像データを取得
+            try:
+                # ワークシートから全ての画像を取得
+                images = list(ws._images)
+                print(f"検出された画像の数: {len(images)}")  # デバッグ用出力
+                
+                # 画像が2つ以上あることを確認
+                if len(images) >= 2:
+                    # 2番目の画像を取得
+                    image = images[1]  # インデックス1が2番目の画像
+                    try:
+                        image_data = image._data()
+                        # PILイメージとして読み込む
+                        img = Image.open(io.BytesIO(image_data))
+                        
+                        # キャンバスのサイズを取得
+                        canvas_width = self.canvas_width
+                        canvas_height = self.canvas_height
+                        
+                        # 画像のアスペクト比を維持しながらリサイズ
+                        img_width, img_height = img.size
+                        width_ratio = canvas_width / img_width
+                        height_ratio = canvas_height / img_height
+                        ratio = min(width_ratio, height_ratio) * 0.95  # 余白を確保するため95%に
+                        
+                        new_width = int(img_width * ratio)
+                        new_height = int(img_height * ratio)
+                        
+                        # 画像をリサイズ
+                        self.image = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                        self.photo = ImageTk.PhotoImage(self.image)
+                        
+                        # キャンバスの中央に画像を配置
+                        x = (canvas_width - new_width) // 2
+                        y = (canvas_height - new_height) // 2
+                        
+                        # キャンバスをクリアして画像を表示
+                        self.canvas.delete("all")
+                        self.canvas.create_image(x, y, image=self.photo, anchor="nw")
+                        
+                    except Exception as img_error:
+                        print(f"警告: 画像の処理中にエラーが発生しました: {img_error}")
+                        messagebox.showwarning("警告", "画像の処理中にエラーが発生しました。")
+                else:
+                    print(f"警告: 2番目の画像が見つかりません。検出された画像の数: {len(images)}")
+                    messagebox.showwarning("警告", "2番目の画像が見つかりませんでした。")
+                    
+            except Exception as img_error:
+                print(f"警告: 画像の検索中にエラーが発生しました: {img_error}")
+                messagebox.showwarning("警告", "画像の読み込みに失敗しました。座標データのみをインポートします。")
+
+            if not self.waypoints:
+                messagebox.showwarning("警告", "インポートできる座標データが見つかりませんでした。")
+                return
+
+            # ルートを更新
+            self.update_canvas_display()
+            self.update_listbox()
+            messagebox.showinfo("完了", f"{len(self.waypoints)}個のポイントをインポートしました")
+
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"エラー詳細:\n{error_details}")
+            messagebox.showerror("エラー", f"インポート中にエラーが発生しました:\n{str(e)}")
+
+    def export_to_excel(self):
+        """ルートポイント情報をExcelファイルに出力"""
+        if not self.waypoints:
+            messagebox.showwarning("警告", "出力するルートポイントがありません")
+            return
+            
+        if not self.image:
+            messagebox.showwarning("警告", "画像が読み込まれていません")
+            return
+            
+        filename = filedialog.asksaveasfilename(
+            parent=self.root,
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+        )
+        
+        if filename:
+            temp_image_paths = []
+            try:
+                # Excelワークブックを作成
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "ルートポイント"
+                
+                # ヘッダーを設定
+                ws['A1'] = '座標'
+                ws['B1'] = '名称'
+                ws['C1'] = 'ルート画像'
+                ws['E1'] = '元画像'
+                
+                # ヘッダーを太字に設定
+                for cell in ['A1', 'B1', 'C1', 'E1']:
+                    ws[cell].font = ws[cell].font.copy(bold=True)
+                
+                # データを入力
+                for i, (x, y, name) in enumerate(self.waypoints, 2):
+                    ws[f'A{i}'] = f'({x}, {y})'
+                    ws[f'B{i}'] = name
+                
+                # 画像を保存して挿入
+                try:
+                    import tempfile
+                    import os
+                    import uuid
+                    
+                    # 一時ファイル名を生成（ユニークなIDを使用）
+                    temp_dir = tempfile.gettempdir()
+                    route_image_path = os.path.join(temp_dir, f'route_image_{uuid.uuid4()}.png')
+                    original_image_path = os.path.join(temp_dir, f'original_image_{uuid.uuid4()}.png')
+                    temp_image_paths = [route_image_path, original_image_path]
+                    
+                    # ルート画像の作成
+                    img_copy = self.image.copy()
+                    aspect_ratio = img_copy.width / img_copy.height
+                    new_height = 300  # 高さを300ピクセルに調整
+                    new_width = int(new_height * aspect_ratio)
+                    img_copy = img_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    
+                    # ポイントとルートを描画
+                    draw = ImageDraw.Draw(img_copy)
+                    
+                    # 画像のサイズに合わせてポイントの座標を調整
+                    scale_x = new_width / self.canvas_width
+                    scale_y = new_height / self.canvas_height
+                    
+                    # ルートを描画（2点以上あれば）
+                    if len(self.waypoints) >= 2:
+                        for i in range(len(self.waypoints)-1):
+                            x1, y1, _ = self.waypoints[i]
+                            x2, y2, _ = self.waypoints[i+1]
+                            # 座標を調整
+                            x1 = int(x1 * scale_x)
+                            y1 = int(y1 * scale_y)
+                            x2 = int(x2 * scale_x)
+                            y2 = int(y2 * scale_y)
+                            draw.line((x1, y1, x2, y2), fill="blue", width=2)
+                    
+                    # ポイントとポイント番号を描画
+                    try:
+                        font = ImageFont.truetype("arial.ttf", 16)
+                    except:
+                        font = ImageFont.load_default()
+                    
+                    for i, (x, y, _) in enumerate(self.waypoints, 1):
+                        # 座標を調整
+                        x = int(x * scale_x)
+                        y = int(y * scale_y)
+                        # ポイントを描画
+                        draw.ellipse((x-5, y-5, x+5, y+5), fill="red")
+                        # ポイント番号を描画
+                        draw.text((x, y-20), str(i), fill="blue", font=font)
+                    
+                    # ルート画像を保存
+                    img_copy.save(route_image_path, 'PNG', optimize=True)
+                    
+                    # 元画像を保存
+                    original_img = self.image.copy()
+                    original_img = original_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    original_img.save(original_image_path, 'PNG', optimize=True)
+                    
+                    # Excelに画像を挿入
+                    route_img = XLImage(route_image_path)
+                    original_img = XLImage(original_image_path)
+                    
+                    # 画像の挿入位置を設定
+                    ws.add_image(route_img, 'C2')
+                    ws.add_image(original_img, 'E2')
+                    
+                    # 画像サイズに合わせてセルの幅と高さを調整
+                    # C列とE列の幅を画像の幅に合わせて設定
+                    pixel_width = new_width / 7  # Excelの列幅は文字数基準なので、ピクセルを文字数に変換
+                    ws.column_dimensions['C'].width = pixel_width
+                    ws.column_dimensions['E'].width = pixel_width
+                    
+                    # D列（空白列）の幅を設定
+                    ws.column_dimensions['D'].width = 4
+                    
+                except Exception as img_error:
+                    messagebox.showwarning("警告", f"画像の挿入中にエラーが発生しました。\nデータのみ保存します。\nエラー詳細: {str(img_error)}")
+                
+                # A列とB列の幅を自動調整
+                for col in ['A', 'B']:
+                    max_length = 0
+                    column = ws[col]
+                    
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    
+                    adjusted_width = (max_length + 2) * 1.2  # 少し余裕を持たせる
+                    ws.column_dimensions[col].width = adjusted_width
+                
+                # ファイルを保存
+                wb.save(filename)
+                messagebox.showinfo("完了", "Excelファイルを出力しました")
+                
+            except Exception as e:
+                messagebox.showerror("エラー", f"ファイルの出力中にエラーが発生しました:\n{str(e)}")
+                # デバッグ情報を表示
+                import traceback
+                traceback.print_exc()
+                
+            finally:
+                # 確実に一時ファイルを削除
+                for temp_path in temp_image_paths:
+                    if temp_path and os.path.exists(temp_path):
+                        try:
+                            os.remove(temp_path)
+                        except:
+                            pass  # 削除に失敗しても続行
+
+    def run(self):
+        # メニューバーを作成
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+
+        # ファイルメニュー
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="ファイル", menu=file_menu)
+        file_menu.add_command(label="画像選択", command=self.load_image)
+        file_menu.add_command(label="画像出力", command=self.save_image)
+        file_menu.add_command(label="Excel出力", command=self.export_to_excel)
+        file_menu.add_command(label="Excelインポート", command=self.import_from_excel)
+        file_menu.add_separator()
+        file_menu.add_command(label="終了", command=self.root.quit)
+
+        self.root.mainloop()
+
+if __name__ == "__main__":
+    app = RouteGenerator()
+    app.run()
+    # Ghostscriptのパスを設定
+    import os
+    os.environ['PATH'] += r';C:\Program Files\gs\gs10.01.2\bin'
+
+      
