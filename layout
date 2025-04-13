@@ -1,0 +1,944 @@
+import tkinter as tk
+from tkinter import ttk
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+import numpy as np
+from tkinter import messagebox
+import matplotlib.font_manager as fm
+from matplotlib.patches import Rectangle, Circle
+import matplotlib.lines as lines
+
+class OfficeLayoutApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("オフィスレイアウト設計ツール")
+        self.root.geometry("1200x800")
+
+        # 日本語フォントの設定
+        self.japanese_font = fm.FontProperties(family='MS Gothic')
+        
+        # メンバーとグループの初期データ
+        self.members = [
+            {"id": 1, "name": "山田太郎", "group_id": 1},
+            {"id": 2, "name": "佐藤花子", "group_id": 1},
+            {"id": 3, "name": "鈴木一郎", "group_id": 2},
+            {"id": 4, "name": "田中次郎", "group_id": 2},
+            {"id": 5, "name": "高橋三郎", "group_id": 3}
+        ]
+        
+        self.groups = [
+            {"id": 1, "name": "開発チーム", "condition": "近接配置"},
+            {"id": 2, "name": "営業チーム", "condition": "窓際配置"},
+            {"id": 3, "name": "管理チーム", "condition": "中央配置"}
+        ]
+
+        # ドラッグ＆ドロップ用の変数
+        self.dragging = False
+        self.drag_item = None
+        self.drag_start_x = 0
+        self.drag_start_y = 0
+        self.drag_start_pos = None
+        self.drag_start_size = None  # サイズ調整用
+        self.size_adjusting = False  # サイズ調整モードフラグ
+        self.desk_patches = []  # デスクのパッチを保持
+        self.rack_patches = []  # ラックのパッチを保持
+        self.desk_texts = []    # デスクのテキストを保持
+        self.rack_texts = []    # ラックのテキストを保持
+        self.desk_data = []     # デスクのデータを保持
+
+        # メインフレーム
+        main_frame = ttk.Frame(root)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 左側のコントロールパネル
+        control_frame = ttk.Frame(main_frame)
+        control_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
+
+        # オフィスサイズ設定
+        office_frame = ttk.LabelFrame(control_frame, text="オフィスサイズ")
+        office_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(office_frame, text="幅:").grid(row=0, column=0, padx=5, pady=2)
+        self.office_width = ttk.Spinbox(office_frame, from_=1, to=100, increment=0.1)
+        self.office_width.set(10)
+        self.office_width.grid(row=0, column=1, padx=5, pady=2)
+        ttk.Label(office_frame, text="m").grid(row=0, column=2, padx=5, pady=2)
+        
+        ttk.Label(office_frame, text="高さ:").grid(row=1, column=0, padx=5, pady=2)
+        self.office_height = ttk.Spinbox(office_frame, from_=1, to=100, increment=0.1)
+        self.office_height.set(8)
+        self.office_height.grid(row=1, column=1, padx=5, pady=2)
+        ttk.Label(office_frame, text="m").grid(row=1, column=2, padx=5, pady=2)
+
+        # デスク設定
+        desk_frame = ttk.LabelFrame(control_frame, text="デスク設定")
+        desk_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(desk_frame, text="幅:").grid(row=0, column=0, padx=5, pady=2)
+        self.desk_width = ttk.Spinbox(desk_frame, from_=0.5, to=5, increment=0.1)
+        self.desk_width.set(1.2)
+        self.desk_width.grid(row=0, column=1, padx=5, pady=2)
+        ttk.Label(desk_frame, text="m").grid(row=0, column=2, padx=5, pady=2)
+        
+        ttk.Label(desk_frame, text="奥行:").grid(row=1, column=0, padx=5, pady=2)
+        self.desk_depth = ttk.Spinbox(desk_frame, from_=0.5, to=5, increment=0.1)
+        self.desk_depth.set(0.8)
+        self.desk_depth.grid(row=1, column=1, padx=5, pady=2)
+        ttk.Label(desk_frame, text="m").grid(row=1, column=2, padx=5, pady=2)
+        
+        ttk.Label(desk_frame, text="個数:").grid(row=2, column=0, padx=5, pady=2)
+        self.desk_count = ttk.Spinbox(desk_frame, from_=1, to=100, increment=1)
+        self.desk_count.set(10)
+        self.desk_count.grid(row=2, column=1, padx=5, pady=2)
+
+        # メンバー設定
+        member_frame = ttk.LabelFrame(control_frame, text="メンバー設定")
+        member_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # メンバーリスト
+        member_list_frame = ttk.Frame(member_frame)
+        member_list_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(member_list_frame, text="メンバー一覧:").pack(anchor=tk.W)
+        self.member_listbox = tk.Listbox(member_list_frame, height=5)
+        self.member_listbox.pack(fill=tk.X, padx=5, pady=2)
+        
+        # メンバー追加フレーム
+        member_add_frame = ttk.Frame(member_frame)
+        member_add_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(member_add_frame, text="名前:").grid(row=0, column=0, padx=5, pady=2)
+        self.new_member_name = ttk.Entry(member_add_frame)
+        self.new_member_name.grid(row=0, column=1, padx=5, pady=2)
+        
+        ttk.Label(member_add_frame, text="グループ:").grid(row=0, column=2, padx=5, pady=2)
+        self.new_member_group = ttk.Combobox(member_add_frame, values=[g["name"] for g in self.groups])
+        self.new_member_group.grid(row=0, column=3, padx=5, pady=2)
+        
+        add_member_button = ttk.Button(member_add_frame, text="メンバー追加", 
+                                     command=self.add_member)
+        add_member_button.grid(row=0, column=4, padx=5, pady=2)
+        
+        # グループ設定
+        group_frame = ttk.LabelFrame(control_frame, text="グループ設定")
+        group_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # グループリスト
+        group_list_frame = ttk.Frame(group_frame)
+        group_list_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(group_list_frame, text="グループ一覧:").pack(anchor=tk.W)
+        self.group_listbox = tk.Listbox(group_list_frame, height=5)
+        self.group_listbox.pack(fill=tk.X, padx=5, pady=2)
+        
+        # グループ追加フレーム
+        group_add_frame = ttk.Frame(group_frame)
+        group_add_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(group_add_frame, text="名前:").grid(row=0, column=0, padx=5, pady=2)
+        self.new_group_name = ttk.Entry(group_add_frame)
+        self.new_group_name.grid(row=0, column=1, padx=5, pady=2)
+        
+        ttk.Label(group_add_frame, text="条件:").grid(row=0, column=2, padx=5, pady=2)
+        self.new_group_condition = ttk.Combobox(group_add_frame, values=[
+            "近接配置", "離隔配置", "窓際配置", "中央配置", "出入口近接"
+        ])
+        self.new_group_condition.grid(row=0, column=3, padx=5, pady=2)
+        
+        add_group_button = ttk.Button(group_add_frame, text="グループ追加", 
+                                    command=self.add_group)
+        add_group_button.grid(row=0, column=4, padx=5, pady=2)
+
+        # 初期データの表示
+        self.update_member_list()
+        self.update_group_list()
+
+        # 生成ボタン
+        generate_button = ttk.Button(control_frame, text="レイアウト生成", command=self.generate_layout)
+        generate_button.pack(padx=5, pady=5)
+        
+        # 備品追加ボタン
+        furniture_frame = ttk.LabelFrame(control_frame, text="備品追加")
+        furniture_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        add_rack_button = ttk.Button(furniture_frame, text="ラック追加", command=self.add_rack)
+        add_rack_button.pack(fill=tk.X, padx=5, pady=2)
+        
+        add_meeting_table_button = ttk.Button(furniture_frame, text="会議机追加", command=self.add_meeting_table)
+        add_meeting_table_button.pack(fill=tk.X, padx=5, pady=2)
+        
+        add_sofa_button = ttk.Button(furniture_frame, text="ソファ追加", command=self.add_sofa)
+        add_sofa_button.pack(fill=tk.X, padx=5, pady=2)
+
+        # 右側のプレビューエリア
+        preview_frame = ttk.Frame(main_frame)
+        preview_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        self.figure, self.ax = plt.subplots()
+        self.canvas = FigureCanvasTkAgg(self.figure, master=preview_frame)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # ナビゲーションツールバーを追加（ズーム、パン、リセットなどの機能）
+        toolbar_frame = ttk.Frame(preview_frame)
+        toolbar_frame.pack(fill=tk.X, padx=5, pady=5)
+        toolbar = NavigationToolbar2Tk(self.canvas, toolbar_frame)
+        toolbar.update()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # ドラッグ＆ドロップのイベントを設定
+        self.canvas.mpl_connect('button_press_event', self.on_mouse_press)
+        self.canvas.mpl_connect('button_release_event', self.on_mouse_release)
+        self.canvas.mpl_connect('motion_notify_event', self.on_mouse_move)
+        
+        # 編集モードの切り替えボタン
+        edit_frame = ttk.Frame(preview_frame)
+        edit_frame.pack(fill=tk.X, padx=5, pady=5)
+        self.edit_mode = tk.BooleanVar(value=False)
+        edit_check = ttk.Checkbutton(edit_frame, text="編集モード", variable=self.edit_mode)
+        edit_check.pack(side=tk.LEFT, padx=5)
+        
+        # 保存ボタン
+        save_button = ttk.Button(edit_frame, text="レイアウトを保存", command=self.save_layout)
+        save_button.pack(side=tk.RIGHT, padx=5)
+        
+        # インポートボタン
+        import_button = ttk.Button(edit_frame, text="レイアウトをインポート", command=self.import_layout)
+        import_button.pack(side=tk.RIGHT, padx=5)
+
+    def add_member(self):
+        name = self.new_member_name.get().strip()
+        group_name = self.new_member_group.get()
+        
+        if name and group_name:
+            group_id = next((g["id"] for g in self.groups if g["name"] == group_name), None)
+            if group_id is not None:
+                new_id = max(m["id"] for m in self.members) + 1
+                self.members.append({
+                    "id": new_id,
+                    "name": name,
+                    "group_id": group_id
+                })
+                self.update_member_list()
+                self.new_member_name.delete(0, tk.END)
+                self.new_member_group.set("")
+
+    def add_group(self):
+        name = self.new_group_name.get().strip()
+        condition = self.new_group_condition.get()
+        
+        if name and condition:
+            new_id = max(g["id"] for g in self.groups) + 1
+            self.groups.append({
+                "id": new_id,
+                "name": name,
+                "condition": condition
+            })
+            self.update_group_list()
+            self.new_group_name.delete(0, tk.END)
+            self.new_group_condition.set("")
+            self.new_member_group["values"] = [g["name"] for g in self.groups]
+
+    def update_member_list(self):
+        self.member_listbox.delete(0, tk.END)
+        for member in self.members:
+            group = next((g["name"] for g in self.groups if g["id"] == member["group_id"]), "不明")
+            self.member_listbox.insert(tk.END, f"{member['name']} ({group})")
+
+    def update_group_list(self):
+        self.group_listbox.delete(0, tk.END)
+        for group in self.groups:
+            members = [m["name"] for m in self.members if m["group_id"] == group["id"]]
+            self.group_listbox.insert(tk.END, f"{group['name']} - {group['condition']} ({len(members)}名)")
+
+    def generate_layout(self):
+        self.ax.clear()
+        
+        # ドラッグ＆ドロップ用の変数をリセット
+        self.desk_patches = []
+        self.rack_patches = []
+        self.desk_texts = []
+        self.rack_texts = []
+        self.desk_data = []
+        
+        # オフィス境界を描画
+        office_width = float(self.office_width.get())
+        office_height = float(self.office_height.get())
+        self.ax.add_patch(plt.Rectangle((0, 0), office_width, office_height, 
+                                      fill=False, color='black'))
+
+        # デスクを配置
+        desk_width = float(self.desk_width.get())
+        desk_depth = float(self.desk_depth.get())
+        desk_count = int(self.desk_count.get())
+        
+        # グループ情報を取得
+        if not self.groups:
+            # グループがない場合は通常の配置
+            cols = int(np.ceil(np.sqrt(desk_count)))
+            rows = int(np.ceil(desk_count / cols))
+            
+            for i in range(desk_count):
+                row = i // cols
+                col = i % cols
+                x = col * (desk_width + 0.5) + 0.5
+                y = row * (desk_depth + 0.5) + 0.5
+                rect = plt.Rectangle((x, y), desk_width, desk_depth, 
+                                   fill=True, color='lightblue')
+                self.ax.add_patch(rect)
+                self.desk_patches.append(rect)
+                self.desk_data.append({"x": x, "y": y, "width": desk_width, "depth": desk_depth})
+        else:
+            # グループごとに配置（同じチームは隣接させる、異なるグループは距離を空ける）
+            group_spacing = 2.0  # グループ間の距離
+            for group_idx, group in enumerate(self.groups):
+                # グループのメンバーを取得
+                group_members = [m for m in self.members if m["group_id"] == group["id"]]
+                
+                if not group_members:
+                    continue
+                
+                # グループの領域を計算（グループ間に余裕を持たせる）
+                group_width = (office_width - (len(self.groups) - 1) * group_spacing) / len(self.groups)
+                group_x = group_idx * (group_width + group_spacing)
+                
+                # グループ内のデスクを配置（隣接させる）
+                cols = int(np.ceil(np.sqrt(len(group_members))))
+                rows = int(np.ceil(len(group_members) / cols))
+                
+                for i, member in enumerate(group_members):
+                    row = i // cols
+                    col = i % cols
+                    x = group_x + col * (desk_width + 0.3) + 0.5
+                    y = row * (desk_depth + 0.3) + 0.5
+                    
+                    # デスクを描画
+                    rect = plt.Rectangle((x, y), desk_width, desk_depth, 
+                                       fill=True, color='lightblue')
+                    self.ax.add_patch(rect)
+                    self.desk_patches.append(rect)
+                    
+                    # メンバー名を表示（日本語フォントを使用）
+                    text = self.ax.text(x + desk_width/2, y + desk_depth/2, member["name"], 
+                                      ha='center', va='center', fontproperties=self.japanese_font, fontsize=8)
+                    self.desk_texts.append(text)
+                    
+                    # デスクのデータを保存
+                    self.desk_data.append({
+                        "x": x, 
+                        "y": y, 
+                        "width": desk_width, 
+                        "depth": desk_depth,
+                        "member_id": member["id"],
+                        "group_id": group["id"]
+                    })
+
+        self.ax.set_xlim(-1, office_width + 1)
+        self.ax.set_ylim(-1, office_height + 1)
+        self.ax.set_aspect('equal')
+        self.canvas.draw()
+        
+    def add_rack(self):
+        # ラックを追加
+        office_width = float(self.office_width.get())
+        office_height = float(self.office_height.get())
+        
+        # ラックのサイズ
+        rack_width = 1.0
+        rack_depth = 0.6
+        
+        # ラックの位置（画面の右側に配置）
+        x = office_width - rack_width - 0.5
+        y = len(self.rack_patches) * (rack_depth + 0.5) + 0.5
+        
+        # ラックを描画
+        rect = plt.Rectangle((x, y), rack_width, rack_depth, 
+                           fill=True, color='lightgreen')
+        self.ax.add_patch(rect)
+        self.rack_patches.append(rect)
+        
+        # ラックのデータを保存
+        self.desk_data.append({
+            "x": x, 
+            "y": y, 
+            "width": rack_width, 
+            "depth": rack_depth,
+            "is_rack": True,
+            "name": f"ラック {len(self.rack_patches)}"  # デフォルトのラック名
+        })
+        
+        # ラック名を表示
+        text = self.ax.text(x + rack_width/2, y + rack_depth/2, f"ラック {len(self.rack_patches)}", 
+                          ha='center', va='center', fontproperties=self.japanese_font, fontsize=8)
+        self.rack_texts.append(text)
+        
+        # キャンバスを更新
+        self.canvas.draw()
+        
+    def add_meeting_table(self):
+        # 会議机を追加
+        office_width = float(self.office_width.get())
+        office_height = float(self.office_height.get())
+        
+        # 会議机のサイズ
+        table_width = 2.0
+        table_depth = 1.2
+        
+        # 会議机の位置（画面の中央付近に配置）
+        x = office_width / 2 - table_width / 2
+        y = office_height / 2 - table_depth / 2
+        
+        # 会議机を描画
+        rect = plt.Rectangle((x, y), table_width, table_depth, 
+                           fill=True, color='lightyellow')
+        self.ax.add_patch(rect)
+        self.rack_patches.append(rect)
+        
+        # 会議机のデータを保存
+        self.desk_data.append({
+            "x": x, 
+            "y": y, 
+            "width": table_width, 
+            "depth": table_depth,
+            "is_meeting_table": True,
+            "name": f"会議机 {len([i for i in self.desk_data if 'is_meeting_table' in i])}"  # デフォルトの会議机名
+        })
+        
+        # 会議机名を表示
+        text = self.ax.text(x + table_width/2, y + table_depth/2, 
+                          f"会議机 {len([i for i in self.desk_data if 'is_meeting_table' in i])}", 
+                          ha='center', va='center', fontproperties=self.japanese_font, fontsize=8)
+        self.rack_texts.append(text)
+        
+        # キャンバスを更新
+        self.canvas.draw()
+        
+    def add_sofa(self):
+        # ソファを追加
+        office_width = float(self.office_width.get())
+        office_height = float(self.office_height.get())
+        
+        # ソファのサイズ
+        sofa_width = 1.8
+        sofa_depth = 0.8
+        
+        # ソファの位置（画面の左側に配置）
+        x = 0.5
+        y = len([i for i in self.desk_data if 'is_sofa' in i]) * (sofa_depth + 0.5) + 0.5
+        
+        # ソファを描画
+        rect = plt.Rectangle((x, y), sofa_width, sofa_depth, 
+                           fill=True, color='pink')
+        self.ax.add_patch(rect)
+        self.rack_patches.append(rect)
+        
+        # ソファのデータを保存
+        self.desk_data.append({
+            "x": x, 
+            "y": y, 
+            "width": sofa_width, 
+            "depth": sofa_depth,
+            "is_sofa": True,
+            "name": f"ソファ {len([i for i in self.desk_data if 'is_sofa' in i])}"  # デフォルトのソファ名
+        })
+        
+        # ソファ名を表示
+        text = self.ax.text(x + sofa_width/2, y + sofa_depth/2, 
+                          f"ソファ {len([i for i in self.desk_data if 'is_sofa' in i])}", 
+                          ha='center', va='center', fontproperties=self.japanese_font, fontsize=8)
+        self.rack_texts.append(text)
+        
+        # キャンバスを更新
+        self.canvas.draw()
+
+    def on_mouse_press(self, event):
+        if not self.edit_mode.get():
+            return
+            
+        if event.inaxes != self.ax:
+            return
+            
+        # クリックされた位置を取得
+        x, y = event.xdata, event.ydata
+        
+        # デスクまたはラックがクリックされたかチェック
+        for i, patch in enumerate(self.desk_patches + self.rack_patches):
+            # パッチの位置とサイズを取得
+            patch_x = patch.get_x()
+            patch_y = patch.get_y()
+            patch_width = patch.get_width()
+            patch_height = patch.get_height()
+            
+            # クリックされた位置がパッチ内かチェック
+            if (patch_x <= x <= patch_x + patch_width and 
+                patch_y <= y <= patch_y + patch_height):
+                self.dragging = True
+                self.drag_item = i
+                self.drag_start_x = x
+                self.drag_start_y = y
+                self.drag_start_pos = (patch_x, patch_y)
+                self.drag_start_size = (patch_width, patch_height)
+                
+                # 右クリックの場合はサイズ変更モードまたは名称入力
+                if event.button == 3:  # 右クリック
+                    if i >= len(self.desk_patches):  # 備品の場合
+                        # サイズ変更モードと名称入力の選択ダイアログを表示
+                        self.show_furniture_action_dialog(i - len(self.desk_patches))
+                        self.dragging = False  # ドラッグをキャンセル
+                    else:
+                        self.size_adjusting = True
+                else:
+                    self.size_adjusting = False
+                
+                print(f"操作開始: アイテム {i}, 位置 ({patch_x}, {patch_y})")
+                break
+                
+    def show_furniture_action_dialog(self, furniture_idx):
+        # 備品の操作選択ダイアログを表示
+        furniture_data_idx = len(self.desk_patches) + furniture_idx
+        
+        # ダイアログを作成
+        dialog = tk.Toplevel(self.root)
+        dialog.title("備品操作")
+        dialog.geometry("300x150")
+        dialog.transient(self.root)  # メインウィンドウの子として設定
+        dialog.grab_set()  # モーダルダイアログにする
+        
+        # ラベルを配置
+        ttk.Label(dialog, text="操作を選択してください:").pack(pady=10)
+        
+        # ボタンを配置
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+        
+        def start_size_adjust():
+            dialog.destroy()
+            self.size_adjusting = True
+            self.dragging = True
+            self.drag_item = len(self.desk_patches) + furniture_idx
+            
+            # 現在の位置とサイズを取得
+            patch = self.rack_patches[furniture_idx]
+            self.drag_start_x = patch.get_x() + patch.get_width() / 2
+            self.drag_start_y = patch.get_y() + patch.get_height() / 2
+            self.drag_start_pos = (patch.get_x(), patch.get_y())
+            self.drag_start_size = (patch.get_width(), patch.get_height())
+            
+        def show_name_dialog():
+            dialog.destroy()
+            self.show_furniture_name_dialog(furniture_idx)
+            
+        ttk.Button(button_frame, text="サイズ変更", command=start_size_adjust).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="名称変更", command=show_name_dialog).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="キャンセル", command=dialog.destroy).pack(side=tk.LEFT, padx=10)
+        
+        # ダイアログを中央に配置
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+                
+    def on_mouse_release(self, event):
+        if not self.edit_mode.get():
+            return
+            
+        if self.dragging:
+            print(f"ドラッグ終了: アイテム {self.drag_item}")
+            self.dragging = False
+            self.drag_item = None
+            self.canvas.draw()
+
+    def on_mouse_move(self, event):
+        if not self.edit_mode.get():
+            return
+            
+        if not self.dragging or self.drag_item is None:
+            return
+            
+        if event.inaxes != self.ax:
+            return
+            
+        # マウスの移動量を計算
+        dx = event.xdata - self.drag_start_x
+        dy = event.ydata - self.drag_start_y
+        
+        if self.size_adjusting:
+            # サイズ変更モード
+            min_size = 0.3  # 最小サイズ
+            new_width = max(min_size, self.drag_start_size[0] + dx)
+            new_height = max(min_size, self.drag_start_size[1] + dy)
+            
+            if self.drag_item < len(self.desk_patches):
+                # デスクのサイズを変更
+                self.desk_patches[self.drag_item].set_width(new_width)
+                self.desk_patches[self.drag_item].set_height(new_height)
+                
+                # テキストの位置も更新
+                if self.drag_item < len(self.desk_texts):
+                    x = self.desk_patches[self.drag_item].get_x()
+                    y = self.desk_patches[self.drag_item].get_y()
+                    self.desk_texts[self.drag_item].set_x(x + new_width / 2)
+                    self.desk_texts[self.drag_item].set_y(y + new_height / 2)
+                
+                # データも更新
+                self.desk_data[self.drag_item]["width"] = new_width
+                self.desk_data[self.drag_item]["depth"] = new_height
+            else:
+                # 備品のサイズを変更
+                furniture_idx = self.drag_item - len(self.desk_patches)
+                self.rack_patches[furniture_idx].set_width(new_width)
+                self.rack_patches[furniture_idx].set_height(new_height)
+                
+                # テキストの位置も更新
+                if furniture_idx < len(self.rack_texts):
+                    x = self.rack_patches[furniture_idx].get_x()
+                    y = self.rack_patches[furniture_idx].get_y()
+                    self.rack_texts[furniture_idx].set_x(x + new_width / 2)
+                    self.rack_texts[furniture_idx].set_y(y + new_height / 2)
+                
+                # データも更新
+                furniture_data_idx = len(self.desk_patches) + furniture_idx
+                self.desk_data[furniture_data_idx]["width"] = new_width
+                self.desk_data[furniture_data_idx]["depth"] = new_height
+        else:
+            # 通常の移動モード
+            new_x = self.drag_start_pos[0] + dx
+            new_y = self.drag_start_pos[1] + dy
+            
+            if self.drag_item < len(self.desk_patches):
+                # デスクを移動
+                self.desk_patches[self.drag_item].set_x(new_x)
+                self.desk_patches[self.drag_item].set_y(new_y)
+                
+                # テキストも移動
+                if self.drag_item < len(self.desk_texts):
+                    self.desk_texts[self.drag_item].set_x(new_x + self.desk_data[self.drag_item]["width"] / 2)
+                    self.desk_texts[self.drag_item].set_y(new_y + self.desk_data[self.drag_item]["depth"] / 2)
+                
+                # データも更新
+                self.desk_data[self.drag_item]["x"] = new_x
+                self.desk_data[self.drag_item]["y"] = new_y
+            else:
+                # 備品を移動
+                furniture_idx = self.drag_item - len(self.desk_patches)
+                self.rack_patches[furniture_idx].set_x(new_x)
+                self.rack_patches[furniture_idx].set_y(new_y)
+                
+                # テキストも移動
+                if furniture_idx < len(self.rack_texts):
+                    self.rack_texts[furniture_idx].set_x(new_x + self.desk_data[len(self.desk_patches) + furniture_idx]["width"] / 2)
+                    self.rack_texts[furniture_idx].set_y(new_y + self.desk_data[len(self.desk_patches) + furniture_idx]["depth"] / 2)
+                
+                # データも更新
+                furniture_data_idx = len(self.desk_patches) + furniture_idx
+                self.desk_data[furniture_data_idx]["x"] = new_x
+                self.desk_data[furniture_data_idx]["y"] = new_y
+        
+        # キャンバスを更新
+        self.canvas.draw()
+                
+    def show_furniture_name_dialog(self, furniture_idx):
+        # 備品の名称入力ダイアログを表示
+        furniture_data_idx = len(self.desk_patches) + furniture_idx
+        
+        # 現在の備品名を取得
+        current_name = ""
+        if "name" in self.desk_data[furniture_data_idx]:
+            current_name = self.desk_data[furniture_data_idx]["name"]
+            
+        # ダイアログを作成
+        dialog = tk.Toplevel(self.root)
+        dialog.title("備品名称入力")
+        dialog.geometry("300x120")
+        dialog.transient(self.root)  # メインウィンドウの子として設定
+        dialog.grab_set()  # モーダルダイアログにする
+        
+        # ラベルとエントリを配置
+        ttk.Label(dialog, text="備品の名称を入力してください:").pack(pady=10)
+        name_var = tk.StringVar(value=current_name)
+        name_entry = ttk.Entry(dialog, textvariable=name_var, width=30)
+        name_entry.pack(pady=5)
+        
+        # ボタンを配置
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+        
+        def save_name():
+            name = name_var.get().strip()
+            self.desk_data[furniture_data_idx]["name"] = name
+            
+            # 備品のテキストを更新または追加
+            if furniture_idx < len(self.rack_texts):
+                # 既存のテキストを更新
+                self.rack_texts[furniture_idx].set_text(name)
+            else:
+                # 新しいテキストを追加
+                x = self.desk_data[furniture_data_idx]["x"]
+                y = self.desk_data[furniture_data_idx]["y"]
+                width = self.desk_data[furniture_data_idx]["width"]
+                depth = self.desk_data[furniture_data_idx]["depth"]
+                
+                text = self.ax.text(x + width/2, y + depth/2, name, 
+                                  ha='center', va='center', fontproperties=self.japanese_font, fontsize=8)
+                self.rack_texts.append(text)
+            
+            self.canvas.draw()
+            dialog.destroy()
+            
+        ttk.Button(button_frame, text="保存", command=save_name).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="キャンセル", command=dialog.destroy).pack(side=tk.LEFT, padx=10)
+        
+        # エントリにフォーカスを設定
+        name_entry.focus_set()
+        
+        # Enterキーで保存
+        dialog.bind("<Return>", lambda e: save_name())
+        
+        # ダイアログを中央に配置
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+    def save_layout(self):
+        # 現在のレイアウトを保存
+        if not self.desk_data:
+            messagebox.showinfo("情報", "保存するレイアウトがありません")
+            return
+            
+        # レイアウトデータを構築
+        layout_data = {
+            "office_width": float(self.office_width.get()),
+            "office_height": float(self.office_height.get()),
+            "desks": [],
+            "furniture": []
+        }
+        
+        for item in self.desk_data:
+            if "is_rack" in item and item["is_rack"]:
+                furniture_data = {
+                    "x": item["x"],
+                    "y": item["y"],
+                    "width": item["width"],
+                    "depth": item["depth"],
+                    "type": "rack"
+                }
+                
+                if "name" in item:
+                    furniture_data["name"] = item["name"]
+                    
+                layout_data["furniture"].append(furniture_data)
+            elif "is_meeting_table" in item and item["is_meeting_table"]:
+                furniture_data = {
+                    "x": item["x"],
+                    "y": item["y"],
+                    "width": item["width"],
+                    "depth": item["depth"],
+                    "type": "meeting_table"
+                }
+                
+                if "name" in item:
+                    furniture_data["name"] = item["name"]
+                    
+                layout_data["furniture"].append(furniture_data)
+            elif "is_sofa" in item and item["is_sofa"]:
+                furniture_data = {
+                    "x": item["x"],
+                    "y": item["y"],
+                    "width": item["width"],
+                    "depth": item["depth"],
+                    "type": "sofa"
+                }
+                
+                if "name" in item:
+                    furniture_data["name"] = item["name"]
+                    
+                layout_data["furniture"].append(furniture_data)
+            else:
+                desk_data = {
+                    "x": item["x"],
+                    "y": item["y"],
+                    "width": item["width"],
+                    "depth": item["depth"]
+                }
+                
+                if "member_id" in item:
+                    desk_data["member_id"] = item["member_id"]
+                    desk_data["group_id"] = item["group_id"]
+                
+                layout_data["desks"].append(desk_data)
+        
+        # ファイル保存ダイアログを表示
+        from tkinter import filedialog
+        import json
+        import os
+        
+        # ダウンロードフォルダのパスを取得
+        download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        
+        # ファイル名を取得
+        file_path = filedialog.asksaveasfilename(
+            initialdir=download_dir,
+            title="レイアウトを保存",
+            defaultextension=".json",
+            filetypes=(("JSON files", "*.json"), ("All files", "*.*"))
+        )
+        
+        if file_path:
+            # レイアウトデータをファイルに保存
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(layout_data, f, ensure_ascii=False, indent=2)
+            
+            messagebox.showinfo("保存完了", f"レイアウトが保存されました\n保存先: {file_path}\nデスク数: {len(layout_data['desks'])}\n備品数: {len(layout_data['furniture'])}")
+        else:
+            messagebox.showinfo("キャンセル", "レイアウトの保存がキャンセルされました")
+
+    def import_layout(self):
+        # レイアウトファイルをインポート
+        from tkinter import filedialog
+        import json
+        import os
+        
+        # ダウンロードフォルダのパスを取得
+        download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        
+        # ファイル選択ダイアログを表示
+        file_path = filedialog.askopenfilename(
+            initialdir=download_dir,
+            title="レイアウトをインポート",
+            filetypes=(("JSON files", "*.json"), ("All files", "*.*"))
+        )
+        
+        if not file_path:
+            messagebox.showinfo("キャンセル", "レイアウトのインポートがキャンセルされました")
+            return
+            
+        try:
+            # JSONファイルを読み込む
+            with open(file_path, "r", encoding="utf-8") as f:
+                layout_data = json.load(f)
+                
+            # オフィスサイズを設定
+            self.office_width.set(str(layout_data.get("office_width", 10)))
+            self.office_height.set(str(layout_data.get("office_height", 8)))
+            
+            # キャンバスをクリア
+            self.ax.clear()
+            
+            # ドラッグ＆ドロップ用の変数をリセット
+            self.desk_patches = []
+            self.rack_patches = []
+            self.desk_texts = []
+            self.rack_texts = []
+            self.desk_data = []
+            
+            # オフィス境界を描画
+            office_width = float(self.office_width.get())
+            office_height = float(self.office_height.get())
+            self.ax.add_patch(plt.Rectangle((0, 0), office_width, office_height, 
+                                          fill=False, color='black'))
+            
+            # デスクを描画
+            for desk in layout_data.get("desks", []):
+                x = desk.get("x", 0)
+                y = desk.get("y", 0)
+                width = desk.get("width", 1.2)
+                depth = desk.get("depth", 0.8)
+                
+                # デスクを描画
+                rect = plt.Rectangle((x, y), width, depth, 
+                                   fill=True, color='lightblue')
+                self.ax.add_patch(rect)
+                self.desk_patches.append(rect)
+                
+                # メンバー名を表示（メンバーIDがある場合）
+                if "member_id" in desk:
+                    member_id = desk["member_id"]
+                    member = next((m for m in self.members if m["id"] == member_id), None)
+                    if member:
+                        text = self.ax.text(x + width/2, y + depth/2, member["name"], 
+                                          ha='center', va='center', fontproperties=self.japanese_font, fontsize=8)
+                        self.desk_texts.append(text)
+                
+                # デスクのデータを保存
+                desk_data = {
+                    "x": x, 
+                    "y": y, 
+                    "width": width, 
+                    "depth": depth
+                }
+                
+                if "member_id" in desk:
+                    desk_data["member_id"] = desk["member_id"]
+                    desk_data["group_id"] = desk["group_id"]
+                
+                self.desk_data.append(desk_data)
+            
+            # 備品を描画
+            for furniture in layout_data.get("furniture", []):
+                x = furniture.get("x", 0)
+                y = furniture.get("y", 0)
+                width = furniture.get("width", 1.0)
+                depth = furniture.get("depth", 0.6)
+                name = furniture.get("name", "")
+                furniture_type = furniture.get("type", "")
+                
+                # 備品の色を設定
+                color = 'lightgreen'  # デフォルト
+                if furniture_type == 'rack':
+                    color = 'lightgreen'
+                elif furniture_type == 'meeting_table':
+                    color = 'lightyellow'
+                elif furniture_type == 'sofa':
+                    color = 'pink'
+                
+                # 備品を描画
+                rect = plt.Rectangle((x, y), width, depth, 
+                                   fill=True, color=color)
+                self.ax.add_patch(rect)
+                self.rack_patches.append(rect)
+                
+                # 備品名を表示
+                if name:
+                    text = self.ax.text(x + width/2, y + depth/2, name, 
+                                      ha='center', va='center', fontproperties=self.japanese_font, fontsize=8)
+                    self.rack_texts.append(text)
+                
+                # 備品のデータを保存
+                furniture_data = {
+                    "x": x, 
+                    "y": y, 
+                    "width": width, 
+                    "depth": depth
+                }
+                
+                if furniture_type == 'rack':
+                    furniture_data["is_rack"] = True
+                elif furniture_type == 'meeting_table':
+                    furniture_data["is_meeting_table"] = True
+                elif furniture_type == 'sofa':
+                    furniture_data["is_sofa"] = True
+                
+                if name:
+                    furniture_data["name"] = name
+                    
+                self.desk_data.append(furniture_data)
+            
+            # キャンバスを更新
+            self.ax.set_xlim(-1, office_width + 1)
+            self.ax.set_ylim(-1, office_height + 1)
+            self.ax.set_aspect('equal')
+            self.canvas.draw()
+            
+            messagebox.showinfo("インポート完了", f"レイアウトをインポートしました\nデスク数: {len(layout_data.get('desks', []))}\n備品数: {len(layout_data.get('furniture', []))}")
+            
+        except Exception as e:
+            messagebox.showerror("エラー", f"レイアウトのインポート中にエラーが発生しました: {str(e)}")
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    app = OfficeLayoutApp(root)
+    root.mainloop() 
