@@ -1,0 +1,222 @@
+import tkinter as tk
+from tkinter import scrolledtext, messagebox
+import random
+import json
+import os
+from datetime import datetime
+
+class ChatbotGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("学習型チャットボット")
+        self.root.geometry("700x800")
+
+        # 学習データのファイルパス
+        self.learning_data_file = "chatbot_learning_data.json"
+        
+        # 学習データの読み込み
+        self.load_learning_data()
+
+        # チャット履歴表示エリア
+        self.chat_history = scrolledtext.ScrolledText(root, wrap=tk.WORD, width=70, height=30)
+        self.chat_history.pack(padx=10, pady=10)
+
+        # メッセージ入力エリア
+        self.message_entry = tk.Entry(root, width=50)
+        self.message_entry.pack(padx=10, pady=5)
+
+        # 送信ボタン
+        self.send_button = tk.Button(root, text="送信", command=self.send_message)
+        self.send_button.pack(pady=5)
+        
+        # フィードバックボタン
+        self.feedback_frame = tk.Frame(root)
+        self.feedback_frame.pack(pady=5)
+        
+        self.good_button = tk.Button(self.feedback_frame, text="👍 良い", command=lambda: self.give_feedback("good"))
+        self.good_button.pack(side=tk.LEFT, padx=5)
+        
+        self.bad_button = tk.Button(self.feedback_frame, text="👎 悪い", command=lambda: self.give_feedback("bad"))
+        self.bad_button.pack(side=tk.LEFT, padx=5)
+        
+        # 学習データ表示ボタン
+        self.show_data_button = tk.Button(root, text="学習データを表示", command=self.show_learning_data)
+        self.show_data_button.pack(pady=5)
+        
+        # 現在の会話履歴
+        self.current_conversation = []
+        
+        # 最後の応答
+        self.last_response = None
+        
+        # 初期メッセージ
+        self.chat_history.insert(tk.END, "ボット: こんにちは！私は学習型チャットボットです。会話を楽しみましょう！\n\n")
+        
+    def load_learning_data(self):
+        """学習データをファイルから読み込む"""
+        if os.path.exists(self.learning_data_file):
+            try:
+                with open(self.learning_data_file, 'r', encoding='utf-8') as f:
+                    self.learning_data = json.load(f)
+            except:
+                self.learning_data = self.get_default_learning_data()
+        else:
+            self.learning_data = self.get_default_learning_data()
+            
+    def get_default_learning_data(self):
+        """デフォルトの学習データを返す"""
+        return {
+            "responses": {
+                "こんにちは": ["こんにちは！", "やあ！", "こんにちは、お手伝いできることはありますか？"],
+                "元気": ["元気です！", "とても元気です！", "元気いっぱいです！"],
+                "さようなら": ["さようなら！", "また会いましょう！", "良い一日を！"],
+                "名前": ["私は学習型チャットボットです。", "チャットボットと申します。", "ボットです。よろしく！"],
+                "天気": ["今日はいい天気ですね。", "天気の話題が好きです。", "晴れの日が好きです。"],
+                "時間": ["現在の時間を教えることはできませんが、お手伝いできることはありますか？"],
+                "ありがとう": ["どういたしまして！", "お役に立てて嬉しいです！", "気軽に質問してくださいね！"],
+                "趣味": ["会話することが好きです。", "質問に答えることが趣味です。", "ユーザーと話すことが好きです。"],
+                "好き": ["ありがとうございます！", "私もあなたのことが好きです！", "嬉しいです！"],
+                "嫌い": ["申し訳ありません。改善できることがあれば教えてください。", "残念です。何か問題がありましたか？", "ご不満があればお知らせください。"]
+            },
+            "default_responses": [
+                "すみません、よく分かりません。", 
+                "もう少し具体的に教えていただけますか？", 
+                "その質問には答えられません。", 
+                "別の質問をしてみてください。"
+            ],
+            "conversation_history": [],
+            "user_feedback": {
+                "good": {},
+                "bad": {}
+            },
+            "learned_patterns": {}
+        }
+        
+    def save_learning_data(self):
+        """学習データをファイルに保存する"""
+        with open(self.learning_data_file, 'w', encoding='utf-8') as f:
+            json.dump(self.learning_data, f, ensure_ascii=False, indent=2)
+
+    def send_message(self):
+        user_message = self.message_entry.get()
+        if user_message.strip() == "":
+            return
+
+        # ユーザーメッセージを表示
+        self.chat_history.insert(tk.END, f"あなた: {user_message}\n")
+        self.message_entry.delete(0, tk.END)
+
+        # 会話履歴に追加
+        self.current_conversation.append({"role": "user", "content": user_message})
+        
+        # 応答を生成
+        ai_message = self.get_ai_response(user_message)
+        self.update_chat_history(ai_message)
+        
+        # 会話履歴に追加
+        self.current_conversation.append({"role": "bot", "content": ai_message})
+        
+        # 会話履歴を保存
+        self.learning_data["conversation_history"].append({
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "conversation": self.current_conversation.copy()
+        })
+        
+        # 学習データを保存
+        self.save_learning_data()
+
+    def get_ai_response(self, user_message):
+        # キーワードに基づいて応答を選択
+        for keyword, responses in self.learning_data["responses"].items():
+            if keyword in user_message:
+                self.last_response = random.choice(responses)
+                return self.last_response
+        
+        # 学習したパターンをチェック
+        for pattern, responses in self.learning_data["learned_patterns"].items():
+            if pattern in user_message:
+                self.last_response = random.choice(responses)
+                return self.last_response
+        
+        # キーワードが見つからない場合はデフォルト応答
+        self.last_response = random.choice(self.learning_data["default_responses"])
+        return self.last_response
+
+    def update_chat_history(self, ai_message):
+        self.chat_history.insert(tk.END, f"ボット: {ai_message}\n\n")
+        self.chat_history.see(tk.END)
+        
+    def give_feedback(self, feedback_type):
+        """ユーザーからのフィードバックを処理する"""
+        if not self.last_response:
+            messagebox.showinfo("フィードバック", "まだ応答がないため、フィードバックを送信できません。")
+            return
+            
+        # フィードバックを記録
+        if feedback_type == "good":
+            if self.last_response not in self.learning_data["user_feedback"]["good"]:
+                self.learning_data["user_feedback"]["good"][self.last_response] = 1
+            else:
+                self.learning_data["user_feedback"]["good"][self.last_response] += 1
+                
+            # 良いフィードバックを受けた場合、ユーザーの最後のメッセージを学習
+            if self.current_conversation and self.current_conversation[-2]["role"] == "user":
+                user_message = self.current_conversation[-2]["content"]
+                self.learn_from_conversation(user_message, self.last_response)
+                
+            messagebox.showinfo("フィードバック", "ありがとうございます！この応答パターンを学習します。")
+            
+        elif feedback_type == "bad":
+            if self.last_response not in self.learning_data["user_feedback"]["bad"]:
+                self.learning_data["user_feedback"]["bad"][self.last_response] = 1
+            else:
+                self.learning_data["user_feedback"]["bad"][self.last_response] += 1
+                
+            messagebox.showinfo("フィードバック", "申し訳ありません。より良い応答を心がけます。")
+            
+        # 学習データを保存
+        self.save_learning_data()
+        
+    def learn_from_conversation(self, user_message, bot_response):
+        """会話から学習する"""
+        # ユーザーメッセージからキーワードを抽出（単純な方法）
+        words = user_message.split()
+        for word in words:
+            if len(word) > 1:  # 1文字の単語は無視
+                if word not in self.learning_data["learned_patterns"]:
+                    self.learning_data["learned_patterns"][word] = []
+                if bot_response not in self.learning_data["learned_patterns"][word]:
+                    self.learning_data["learned_patterns"][word].append(bot_response)
+                    
+    def show_learning_data(self):
+        """学習データを表示する"""
+        data_window = tk.Toplevel(self.root)
+        data_window.title("学習データ")
+        data_window.geometry("600x500")
+        
+        data_text = scrolledtext.ScrolledText(data_window, wrap=tk.WORD, width=70, height=30)
+        data_text.pack(padx=10, pady=10)
+        
+        # 学習データの表示
+        data_text.insert(tk.END, "=== 学習したパターン ===\n")
+        for pattern, responses in self.learning_data["learned_patterns"].items():
+            data_text.insert(tk.END, f"パターン: {pattern}\n")
+            data_text.insert(tk.END, f"応答: {', '.join(responses)}\n\n")
+            
+        data_text.insert(tk.END, "=== 良いフィードバック ===\n")
+        for response, count in self.learning_data["user_feedback"]["good"].items():
+            data_text.insert(tk.END, f"応答: {response} (評価: {count}回)\n")
+            
+        data_text.insert(tk.END, "\n=== 悪いフィードバック ===\n")
+        for response, count in self.learning_data["user_feedback"]["bad"].items():
+            data_text.insert(tk.END, f"応答: {response} (評価: {count}回)\n")
+            
+        data_text.config(state=tk.DISABLED)
+
+def main():
+    root = tk.Tk()
+    app = ChatbotGUI(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
