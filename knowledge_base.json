@@ -1,0 +1,82 @@
+{
+  "general_knowledge": {},
+  "learned_knowledge": {
+    "python": {
+      "content": "pythonです",
+      "timestamp": "2025-04-15T22:37:19.548076",
+      "confidence": "verified"
+    }
+  },
+  "conversation_history": [
+    {
+      "timestamp": "2025-04-15T22:14:38.962391",
+      "user_input": "こんにちは",
+      "bot_response": "申し訳ありません。その情報についてはまだ学習中です。"
+    },
+    {
+      "timestamp": "2025-04-15T22:14:54.641751",
+      "user_input": "はじめまして",
+      "bot_response": "申し訳ありません。その情報についてはまだ学習中です。"
+    },
+    {
+      "timestamp": "2025-04-15T22:23:37.365326",
+      "user_input": "こんにちは",
+      "bot_response": "申し訳ありません。その情報についてはまだ学習中です。"
+    },
+    {
+      "timestamp": "2025-04-15T22:23:56.429117",
+      "user_input": "どうやればあなたが学習できますか？",
+      "bot_response": "申し訳ありません。その情報についてはまだ学習中です。"
+    },
+    {
+      "timestamp": "2025-04-15T22:28:32.379094",
+      "user_input": "こんにちは",
+      "bot_response": "申し訳ありません。その情報についてはまだ学習中です。"
+    },
+    {
+      "timestamp": "2025-04-15T22:30:14.073166",
+      "user_input": "pyth",
+      "bot_response": "申し訳ありません。その情報についてはまだ学習中です。"
+    },
+    {
+      "timestamp": "2025-04-15T22:30:19.847548",
+      "user_input": "python",
+      "bot_response": "申し訳ありません。その情報についてはまだ学習中です。"
+    },
+    {
+      "timestamp": "2025-04-15T22:31:19.871656",
+      "user_input": "python",
+      "bot_response": "申し訳ありません。その情報についてはまだ学習中です。"
+    },
+    {
+      "timestamp": "2025-04-15T22:31:52.094043",
+      "user_input": "機械学習",
+      "bot_response": "申し訳ありません。その情報についてはまだ学習中です。"
+    },
+    {
+      "timestamp": "2025-04-15T22:32:26.738609",
+      "user_input": "python",
+      "bot_response": "申し訳ありません。その情報についてはまだ学習中です。"
+    },
+    {
+      "timestamp": "2025-04-15T22:37:06.948519",
+      "user_input": "こんにちｈわ",
+      "bot_response": "申し訳ありません。その情報についてはまだ学習中です。"
+    },
+    {
+      "timestamp": "2025-04-15T22:37:28.453108",
+      "user_input": "python",
+      "bot_response": "学習した情報から: pythonです"
+    },
+    {
+      "timestamp": "2025-04-15T22:41:16.007671",
+      "user_input": "python",
+      "bot_response": "学習した情報から: pythonです"
+    },
+    {
+      "timestamp": "2025-04-15T22:58:13.733930",
+      "user_input": "python",
+      "bot_response": "学習した情報から: pythonです"
+    }
+  ]
+}
